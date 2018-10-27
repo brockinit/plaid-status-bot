@@ -97,4 +97,4 @@ function sendSlackAlerts(uptimeAlerts, timelineAlerts) {
   console.log(timelineAlerts, 'TIMELINE');
 }
 
-checkPlaidStatus();
+setInterval(checkPlaidStatus, 30000);
