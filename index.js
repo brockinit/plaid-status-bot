@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const request = require('request-promise-native');
 
-const institutionStatuses = {
+let institutionStatuses = {
   uptime: {},
   timeline: [{}],
 };
@@ -13,7 +13,7 @@ const PLAID_API = {
 };
 const PROBLEM_STATUSES = ['warning', 'error'];
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
-const CHECK_STATUS_INTERVAL = 5000;
+const CHECK_STATUS_INTERVAL = 60000;
 
 async function checkPlaidStatus() {
   let uptimeData;
@@ -26,7 +26,10 @@ async function checkPlaidStatus() {
   }
   const uptimeAlerts = getUptimeAlerts(uptimeData);
   const timelineAlerts = getTimelineAlerts(timelineData);
-  sendSlackAlerts([...uptimeAlerts, ...timelineAlerts]);
+  const allAlerts = [...uptimeAlerts, ...timelineAlerts];
+  if (allAlerts.length > 0) {
+    sendSlackAlerts([...uptimeAlerts, ...timelineAlerts]);
+  }
   institutionStatuses = { uptime: uptimeData, timeline: timelineData };
 }
 
@@ -41,16 +44,19 @@ function getUptimeAlerts(institutionUptimes) {
   return Object.keys(institutionUptimes)
     .filter(institutionName => {
       const { current } = institutionUptimes[institutionName];
-      const previouslyClear = institutionStatuses ?
-        institutionStatuses.uptime[current.title].current.level === 'clear' : true;
+      let previouslyClear = true;
+      if (institutionStatuses.uptime[current.title]) {
+        previouslyClear = institutionStatuses.uptime[current.title].current.level === 'clear';
+      }
       return PROBLEM_STATUSES.includes(current.level) && previouslyClear;
     })
     .map(institutionName => {
       const { title, level, percentage } = institutionUptimes[institutionName].current;
-      const alertString = `\nBank: *${title}* \nAlert-level: *${level}* \nUptime: *${percentage}* \n`;
+      const alertString = `\nAlert-level: *${level}* \nUptime: *${percentage}* \n`;
       return {
         text: alertString,
         color: level === 'error' ? 'danger' : 'warning',
+        institutionName,
       };
     });
 }
@@ -81,18 +87,30 @@ function getTimelineAlerts(institutionAlertTimeline) {
 
 /*
  * Sends a slack message to the specified channel for each new plaid status alert.
- *
+
  * @param {Array} allAlerts - A list of new institution alerts
 */
 function sendSlackAlerts(allAlerts) {
-  allAlerts.forEach(alertBody => {
-    const options = {
-      uri: SLACK_WEBHOOK_URL,
-      body: alertBody,
-      json: true,
+  const attachments = allAlerts.map(alertBody => {
+    return {
+      "fallback": 'Plaid Alert',
+      "pretext": 'Plaid Alert',
+      "color": alertBody.color,
+      "fields":[
+         {
+            "title": alertBody.institutionName,
+            "value": alertBody.text,
+            "short": false,
+         },
+      ]
     };
-    request.post(options);
   });
+  const options = {
+    uri: SLACK_WEBHOOK_URL,
+    body: { text: '', attachments },
+    json: true,
+  };
+  request.post(options);
 }
 
 setInterval(checkPlaidStatus, CHECK_STATUS_INTERVAL);
