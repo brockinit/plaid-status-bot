@@ -87,7 +87,7 @@ function getTimelineAlerts(institutionAlertTimeline) {
 
 /*
  * Sends a slack message to the specified channel for each new plaid status alert.
-
+ *
  * @param {Array} allAlerts - A list of new institution alerts
 */
 function sendSlackAlerts(allAlerts) {
