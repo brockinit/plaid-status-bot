@@ -9,8 +9,8 @@ const PLAID_API = {
   TIMELINE_URL: '/issues/timeline',
 };
 const PROBLEM_STATUSES = ['warning', 'error'];
-// Should come from .env
-const SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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"
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
+const CHECK_STATUS_INTERVAL = 30000;
 
 async function checkPlaidStatus() {
   let uptimeData;
@@ -25,7 +25,7 @@ async function checkPlaidStatus() {
   const timelineAlerts = getTimelineAlerts(timelineData);
 
   sendSlackAlerts(uptimeAlerts, timelineAlerts);
-  // writeNewDataToDisk(uptimeData, timelineData);
+  writeNewDataToDisk(uptimeData, timelineData);
 }
 
 function writeNewDataToDisk() {
@@ -49,7 +49,14 @@ function getUptimeAlerts(institutionUptimes) {
       const previouslyClear = institutionStatuses.uptime[current.title].current.level === 'clear';
       return PROBLEM_STATUSES.includes(current.level) && previouslyClear;
     })
-    .map(institutionName => institutionUptimes[institutionName].current);
+    .map(institutionName => {
+      const { title, level, percentage } = institutionUptimes[institutionName].current;
+      const alertString = `\nBank: *${title}* \nAlert-level: *${level}* \nUptime: *${percentage}* \n`;
+      return {
+        text: alertString,
+        color: level === 'error' ? 'danger' : 'warning',
+      };
+    });
 }
 
 /*
@@ -83,18 +90,16 @@ function sendSlackAlerts(uptimeAlerts, timelineAlerts) {
   }
 
   // Ping slack!
-  let alertString = 'New plaid alert! ';
-  uptimeAlerts.forEach(({ title, level, percentage }) => {
-    alertString += `\nBank: ${title} \nAlert-level: ${level} \nUptime: ${percentage} \n`;
+  uptimeAlerts.forEach(alertBody => {
+    const options = {
+      uri: SLACK_WEBHOOK_URL,
+      body: alertBody,
+      json: true,
+    };
+    request.post(options);
   });
-  const options = {
-    uri: SLACK_WEBHOOK_URL,
-    body: { text: alertString },
-    json: true,
-  };
-  request.post(options);
   console.log(uptimeAlerts, 'UPTIME');
   console.log(timelineAlerts, 'TIMELINE');
 }
 
-setInterval(checkPlaidStatus, 30000);
+setInterval(checkPlaidStatus, CHECK_STATUS_INTERVAL);
