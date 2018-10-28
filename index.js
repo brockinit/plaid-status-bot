@@ -1,8 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const request = require('request-promise-native');
-const institutionStatuses = require('./institutionStatuses.json');
 
+const institutionStatuses = {
+  uptime: {},
+  timeline: [{}],
+};
 const PLAID_API = {
   STATUS_HOST: 'https://status.plaid.com',
   UPTIME_URL: '/institutions/uptime',
@@ -10,7 +13,7 @@ const PLAID_API = {
 };
 const PROBLEM_STATUSES = ['warning', 'error'];
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
-const CHECK_STATUS_INTERVAL = 30000;
+const CHECK_STATUS_INTERVAL = 5000;
 
 async function checkPlaidStatus() {
   let uptimeData;
@@ -23,16 +26,8 @@ async function checkPlaidStatus() {
   }
   const uptimeAlerts = getUptimeAlerts(uptimeData);
   const timelineAlerts = getTimelineAlerts(timelineData);
-
-  sendSlackAlerts(uptimeAlerts, timelineAlerts);
-  writeNewDataToDisk(uptimeData, timelineData);
-}
-
-function writeNewDataToDisk() {
-  fs.writeFileSync(
-    path.resolve(__dirname, './institutionStatuses.json'),
-    JSON.stringify({ uptime: uptimeData, timeline: timelineData })
-  );
+  sendSlackAlerts([...uptimeAlerts, ...timelineAlerts]);
+  institutionStatuses = { uptime: uptimeData, timeline: timelineData };
 }
 
 /*
@@ -46,7 +41,8 @@ function getUptimeAlerts(institutionUptimes) {
   return Object.keys(institutionUptimes)
     .filter(institutionName => {
       const { current } = institutionUptimes[institutionName];
-      const previouslyClear = institutionStatuses.uptime[current.title].current.level === 'clear';
+      const previouslyClear = institutionStatuses ?
+        institutionStatuses.uptime[current.title].current.level === 'clear' : true;
       return PROBLEM_STATUSES.includes(current.level) && previouslyClear;
     })
     .map(institutionName => {
@@ -83,14 +79,13 @@ function getTimelineAlerts(institutionAlertTimeline) {
   return newTimelineAlerts;
 }
 
-function sendSlackAlerts(uptimeAlerts, timelineAlerts) {
-  // Do nothing if there are no alerts to send
-  if (uptimeAlerts.length === 0 && timelineAlerts.length === 0) {
-    return;
-  }
-
-  // Ping slack!
-  uptimeAlerts.forEach(alertBody => {
+/*
+ * Sends a slack message to the specified channel for each new plaid status alert.
+ *
+ * @param {Array} allAlerts - A list of new institution alerts
+*/
+function sendSlackAlerts(allAlerts) {
+  allAlerts.forEach(alertBody => {
     const options = {
       uri: SLACK_WEBHOOK_URL,
       body: alertBody,
@@ -98,8 +93,6 @@ function sendSlackAlerts(uptimeAlerts, timelineAlerts) {
     };
     request.post(options);
   });
-  console.log(uptimeAlerts, 'UPTIME');
-  console.log(timelineAlerts, 'TIMELINE');
 }
 
 setInterval(checkPlaidStatus, CHECK_STATUS_INTERVAL);
