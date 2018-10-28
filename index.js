@@ -13,7 +13,7 @@ const PLAID_API = {
 };
 const PROBLEM_STATUSES = ['warning', 'error'];
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
-const CHECK_STATUS_INTERVAL = 60000;
+const CHECK_STATUS_INTERVAL = process.env.CHECK_STATUS_INTERVAL || 60000;
 
 async function checkPlaidStatus() {
   let uptimeData;
